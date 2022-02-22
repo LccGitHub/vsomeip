@@ -1,0 +1,25 @@
+
+## compile vsomeip
+mkdir build
+cd build
+cmake -DCMAKE_INSTALL_PREFIX=../out -DENABLE_SIGNAL_HANDLING=1 ..
+make
+
+## compile tc8 demo
+cd test/tc8_vsomeip/
+mkdir build
+cd build
+cmake ..
+cd ../
+
+## RUN
+
+1. vsomeip
+cd test/tc8_vsomeip/
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:xxxxx/vsomeip/out/lib/
+./build/tc8daemon
+
+2. canoe
+open tc8 project
+start
+

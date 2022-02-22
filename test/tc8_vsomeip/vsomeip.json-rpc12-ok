@@ -1,0 +1,149 @@
+{
+    "unicast" : "192.168.2.111",
+    "logging" :
+    { 
+        "level" : "debug",
+        "console" : "true",
+        "file" : { "enable" : "false", "path" : "/tmp/vsomeip.log" },
+        "dlt" : "false"
+    },
+    "applications" : 
+    [
+        {
+            "name" : "service-sample",
+            "id" : "0x1277"
+        }
+    ],
+    "services" :
+    [
+        {
+            "service" : "0x7D0",
+            "instance" : "0x1",
+            "unreliable" : "30501",
+            "events" : 
+            [
+                {
+                    "event" : "0x8002",
+                    "is_field" : "false",
+                    "is_reliable" : "false",
+                    "update-cycle" : 1000
+                },
+                {
+                    "event" : "0x8005",
+                    "is_field" : "true",
+                    "is_reliable" : "false",
+                    "update-cycle" : 0
+                },
+                {
+                    "event" : "0x006",
+                    "is_field" : "false",
+                    "is_reliable" : "false",
+                    "update-cycle" : 0
+                }
+            ],
+            "eventgroups" :
+            [
+                {
+                    "eventgroup" : "0x1",
+                    "events" : [ "0x8002", "0x8005", "0x006" ],
+                    "threshold" :"2",
+                    "multicast" : 
+                    {
+                        "address" : "224.224.224.240", 
+                        "port" : "30501"
+                    }
+                }
+            ]
+        },
+        {
+            "service" : "0x7D0",
+            "instance" : "0x2",
+            "unreliable" : "30502",
+            "events" : 
+            [
+                {
+                    "event" : "0x0007",
+                    "is_field" : "false",
+                    "is_reliable" : "false",
+                    "update-cycle" : 0
+                }
+            ],
+            "eventgroups" :
+            [
+                {
+                    "eventgroup" : "0x3",
+                    "events" : [ "0x0007"]
+                }
+            ]
+        },
+        {
+            "service" : "0xBB8",
+            "instance" : "0x1",
+            "reliable" : { "port" : "30503", "enable-magic-cookies" : "false" },
+            "events" : 
+            [
+                {
+                    "event" : "0x8002",
+                    "is_field" : "false",
+                    "is_reliable" : "true",
+                    "update-cycle" : 1000
+                },
+                {
+                    "event" : "0x8005",
+                    "is_field" : "false",
+                    "is_reliable" : "true",
+                    "update-cycle" : 0
+                },
+                {
+                    "event" : "0x006",
+                    "is_field" : "true",
+                    "is_reliable" : "true",
+                    "update-cycle" : 0
+                }
+            ],
+            "eventgroups" :
+            [
+                {
+                    "eventgroup" : "0x5",
+                    "events" : [ "0x8002", "0x8005", "0x8006" ]
+                }
+            ]
+        },
+        {
+            "service" : "0xBB8",
+            "instance" : "0x2",
+            "reliable" : { "port" : "30501", "enable-magic-cookies" : "false" },
+            "events" : 
+            [
+                {
+                    "event" : "0x0007",
+                    "is_field" : "false",
+                    "is_reliable" : "true",
+                    "update-cycle" : 0
+                }
+            ],
+            "eventgroups" :
+            [
+                {
+                    "eventgroup" : "0x6",
+                    "events" : [ "0x0007"]
+                }
+            ]
+        }
+    ],
+    "routing" : "service-sample",
+    "service-discovery" :
+    {
+        "enable" : "true",
+        "multicast" : "237.60.1.1",
+        "port" : "30490",
+        "protocol" : "udp",
+        "initial_delay_min" : "10",
+        "initial_delay_max" : "52",
+        "repetitions_base_delay" : "100",
+        "repetitions_max" : "5",
+        "ttl" : "3",
+        "cyclic_offer_delay" : "2000",
+        "request_response_delay" : "1500"
+    }
+}
