@@ -295,7 +295,7 @@ protected:
     std::uint32_t own_uid_;
     std::uint32_t own_gid_;
 
-private:
+    private:
     services_t services_;
     mutable std::mutex services_mutex_;
 

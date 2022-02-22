@@ -2018,6 +2018,7 @@ std::shared_ptr<endpoint> routing_manager_impl::create_service_discovery_endpoin
 
 services_t routing_manager_impl::get_offered_services() const {
     services_t its_services;
+
     for (const auto& s : get_services()) {
         for (const auto& i : s.second) {
             if (i.second->is_local()) {
@@ -2485,7 +2486,6 @@ void routing_manager_impl::del_routing_info(service_t _service, instance_t _inst
 
 void routing_manager_impl::update_routing_info(std::chrono::milliseconds _elapsed) {
     std::map<service_t, std::vector<instance_t> > its_expired_offers;
-
     {
         std::lock_guard<std::mutex> its_lock(services_remote_mutex_);
         for (const auto &s : services_remote_) {
@@ -2517,6 +2517,39 @@ void routing_manager_impl::update_routing_info(std::chrono::milliseconds _elapse
                     << "." << std::hex << std::setw(4) << std::setfill('0') << i;
         }
     }
+}
+
+void routing_manager_impl::on_offer_service_ttl_expired()
+{
+    VSOMEIP_ERROR<<"("<<__func__<<":"<<__LINE__<< ")";
+    // Ensure to StopOffer all services that are offered by the application hosting the rm
+    local_services_map_t its_services;
+    {
+        std::lock_guard<std::mutex> its_lock(local_services_mutex_);
+        for (const auto& s : local_services_) {
+            for (const auto& i : s.second) {
+                if (std::get<2>(i.second) == client_) {
+                    its_services[s.first][i.first] = i.second;
+                }
+            }
+        }
+
+    }
+    for (const auto& s : its_services) {
+        for (const auto& i : s.second) {
+            on_stop_offer_service(std::get<2>(i.second), s.first, i.first,
+                    std::get<0>(i.second), std::get<1>(i.second));
+        }
+    }
+
+
+    for (const auto client : ep_mgr_->get_connected_clients()) {
+        if (client != VSOMEIP_ROUTING_CLIENT) {
+            remove_local(client, true);
+        }
+    }
+    VSOMEIP_ERROR<<"("<<__func__<<":"<<__LINE__<< ")";
+
 }
 
 void routing_manager_impl::expire_services(

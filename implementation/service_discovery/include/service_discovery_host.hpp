@@ -57,6 +57,8 @@ public:
 
     virtual void update_routing_info(std::chrono::milliseconds _elapsed) = 0;
 
+    virtual void on_offer_service_ttl_expired() = 0;
+
     virtual void on_remote_unsubscribe(
             std::shared_ptr<remote_subscription> &_subscription) = 0;
 

@@ -219,6 +219,10 @@ private:
 
     void check_ttl(const boost::system::error_code &_error);
 
+    void start_ttl_timer_offered();
+    void stop_ttl_timer_offered();
+    void check_ttl_offered(const boost::system::error_code &_error);
+
     void start_subscription_expiration_timer();
     void start_subscription_expiration_timer_unlocked();
     void stop_subscription_expiration_timer();
@@ -400,6 +404,9 @@ private:
     boost::asio::steady_timer ttl_timer_;
     std::chrono::milliseconds ttl_timer_runtime_;
     ttl_t ttl_;
+    std::mutex ttl_timer_offered_mutex_;
+    boost::asio::steady_timer ttl_timer_offered_;
+    std::chrono::milliseconds ttl_timer_offered_runtime_;
 
     // TTL handling for subscriptions done by other hosts
     std::mutex subscription_expiration_timer_mutex_;
@@ -445,6 +452,7 @@ private:
     boost::asio::ip::address current_remote_address_;
 
     std::atomic<bool> is_diagnosis_;
+    bool initial_wait_phase_;
 
     std::mutex pending_remote_subscriptions_mutex_;
     std::map<std::shared_ptr<remote_subscription>,

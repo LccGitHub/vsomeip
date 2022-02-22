@@ -58,6 +58,8 @@ service_discovery_impl::service_discovery_impl(
       ttl_timer_(_host->get_io()),
       ttl_timer_runtime_(VSOMEIP_SD_DEFAULT_CYCLIC_OFFER_DELAY / 2),
       ttl_(VSOMEIP_SD_DEFAULT_TTL),
+      ttl_timer_offered_(_host->get_io()),
+      ttl_timer_offered_runtime_(VSOMEIP_SD_DEFAULT_TTL),
       subscription_expiration_timer_(_host->get_io()),
       max_message_size_(VSOMEIP_MAX_UDP_SD_PAYLOAD),
       initial_delay_(0),
@@ -71,6 +73,7 @@ service_discovery_impl::service_discovery_impl(
       main_phase_timer_(_host->get_io()),
       is_suspended_(false),
       is_diagnosis_(false),
+      initial_wait_phase_(true),
       last_msg_received_timer_(_host->get_io()),
       last_msg_received_timer_timeout_(VSOMEIP_SD_DEFAULT_CYCLIC_OFFER_DELAY +
                                            (VSOMEIP_SD_DEFAULT_CYCLIC_OFFER_DELAY / 10)) {
@@ -129,7 +132,13 @@ service_discovery_impl::init() {
             configuration_->get_sd_cyclic_offer_delay());
     offer_debounce_time_ = std::chrono::milliseconds(
             configuration_->get_sd_offer_debounce_time());
-    ttl_timer_runtime_ = cyclic_offer_delay_ / 2;
+    if (cyclic_offer_delay_ == std::chrono::milliseconds(0)) {
+       ttl_timer_runtime_ = std::chrono::milliseconds(ttl_*1000/2);
+    }
+    else {
+        ttl_timer_runtime_ = cyclic_offer_delay_ / 2;
+    }
+    ttl_timer_offered_runtime_ = std::chrono::milliseconds(ttl_*1000);
 
     ttl_factor_offers_ = configuration_->get_ttl_factor_offers();
     ttl_factor_subscriptions_ = configuration_->get_ttl_factor_subscribes();
@@ -1016,11 +1025,16 @@ service_discovery_impl::on_message(
         std::lock_guard<std::mutex> its_lock(last_msg_received_timer_mutex_);
         boost::system::error_code ec;
         last_msg_received_timer_.cancel(ec);
-        last_msg_received_timer_.expires_from_now(
+        if (last_msg_received_timer_timeout_ == std::chrono::milliseconds(0)) {
+           return;
+        }
+        else {
+            last_msg_received_timer_.expires_from_now(
                 last_msg_received_timer_timeout_, ec);
-        last_msg_received_timer_.async_wait(
+            last_msg_received_timer_.async_wait(
                 std::bind(&service_discovery_impl::on_last_msg_received_timer_expired,
                           shared_from_this(), std::placeholders::_1));
+        }
     }
 
     current_remote_address_ = _sender;
@@ -1170,7 +1184,6 @@ service_discovery_impl::process_serviceentry(
         std::vector<std::shared_ptr<message_impl> > &_resubscribes,
         bool _received_via_mcast,
         const sd_acceptance_state_t& _sd_ac_state) {
-
     // Read service info from entry
     entry_type_e its_type = _entry->get_type();
     service_t its_service = _entry->get_service();
@@ -1494,7 +1507,6 @@ service_discovery_impl::process_findservice_serviceentry(
         service_t _service, instance_t _instance,
         major_version_t _major, minor_version_t _minor,
         bool _unicast_flag) {
-
     if (_instance != ANY_INSTANCE) {
         std::shared_ptr<serviceinfo> its_info = host_->get_offered_service(
                 _service, _instance);
@@ -1537,7 +1549,8 @@ service_discovery_impl::send_unicast_offer_service(
     its_messages.push_back(its_offer_message);
 
     insert_offer_service(its_messages, _info);
-
+    stop_ttl_timer_offered();
+    start_ttl_timer_offered();
     serialize_and_send(its_messages, current_remote_address_);
 }
 
@@ -1547,7 +1560,8 @@ service_discovery_impl::send_multicast_offer_service(
     auto its_offer_message(std::make_shared<message_impl>());
     std::vector<std::shared_ptr<message_impl> > its_messages;
     its_messages.push_back(its_offer_message);
-
+    stop_ttl_timer_offered();
+    start_ttl_timer_offered();
     insert_offer_service(its_messages, _info);
 
     serialize_and_send(its_messages, current_remote_address_);
@@ -2536,6 +2550,33 @@ service_discovery_impl::check_ttl(const boost::system::error_code &_error) {
     }
 }
 
+void
+service_discovery_impl::start_ttl_timer_offered() {
+    std::lock_guard<std::mutex> its_lock(ttl_timer_offered_mutex_);
+    boost::system::error_code ec;
+    ttl_timer_offered_.expires_from_now(std::chrono::milliseconds(ttl_timer_offered_runtime_), ec);
+    ttl_timer_offered_.async_wait(
+            std::bind(&service_discovery_impl::check_ttl_offered, shared_from_this(),
+                      std::placeholders::_1));
+}
+
+void
+service_discovery_impl::stop_ttl_timer_offered() {
+    std::lock_guard<std::mutex> its_lock(ttl_timer_offered_mutex_);
+    boost::system::error_code ec;
+    ttl_timer_offered_.cancel(ec);
+}
+
+void
+service_discovery_impl::check_ttl_offered(const boost::system::error_code &_error) {
+    if (!_error) {
+        {
+            host_->on_offer_service_ttl_expired();
+        }
+
+    }
+}
+
 bool
 service_discovery_impl::check_static_header_fields(
         const std::shared_ptr<const message> &_message) const {
@@ -2807,10 +2848,12 @@ service_discovery_impl::on_offer_debounce_timer_expired(
     std::shared_ptr<message_impl> its_message(std::make_shared<message_impl>());
     its_messages.push_back(its_message);
     insert_offer_entries(its_messages, repetition_phase_offers, true);
-
     // Serialize and send
     send(its_messages);
+    initial_wait_phase_ = false;
 
+    stop_ttl_timer_offered();
+    start_ttl_timer_offered();
     std::chrono::milliseconds its_delay(0);
     std::uint8_t its_repetitions(0);
     if (repetitions_max_) {
@@ -2832,18 +2875,24 @@ service_discovery_impl::on_offer_debounce_timer_expired(
         std::lock_guard<std::mutex> its_lock(repetition_phase_timers_mutex_);
         repetition_phase_timers_[its_timer] = repetition_phase_offers;
     }
-
-    boost::system::error_code ec;
-    its_timer->expires_from_now(its_delay, ec);
-    if (ec) {
-        VSOMEIP_ERROR<< "service_discovery_impl::on_offer_debounce_timer_expired "
-        "setting expiry time of timer failed: " << ec.message();
+    if (its_delay == std::chrono::milliseconds(0)) {
+       VSOMEIP_ERROR<<"("<<__func__<<":"<<__LINE__<< "its_delay is 0)";
+       return;
     }
-    its_timer->async_wait(
-            std::bind(
-                    &service_discovery_impl::on_repetition_phase_timer_expired,
-                    this, std::placeholders::_1, its_timer, its_repetitions,
-                    its_delay.count()));
+    else {
+
+	    boost::system::error_code ec;
+	    its_timer->expires_from_now(its_delay, ec);
+	    if (ec) {
+		VSOMEIP_ERROR<< "service_discovery_impl::on_offer_debounce_timer_expired "
+		"setting expiry time of timer failed: " << ec.message();
+	    }
+	    its_timer->async_wait(
+		    std::bind(
+		            &service_discovery_impl::on_repetition_phase_timer_expired,
+		            this, std::placeholders::_1, its_timer, its_repetitions,
+		            its_delay.count()));
+    }
     start_offer_debounce_timer(false);
 }
 
@@ -2900,6 +2949,10 @@ service_discovery_impl::on_repetition_phase_timer_expired(
                 return;
             }
             boost::system::error_code ec;
+            if (new_delay == std::chrono::milliseconds(0)) {
+                VSOMEIP_ERROR<<"("<<__func__<<":"<<__LINE__<< "its_delay is 0)";
+                return;
+            }
             its_timer_pair->first->expires_from_now(new_delay, ec);
             if (ec) {
                 VSOMEIP_ERROR <<
@@ -3061,6 +3114,11 @@ void
 service_discovery_impl::start_main_phase_timer() {
     std::lock_guard<std::mutex> its_lock(main_phase_timer_mutex_);
     boost::system::error_code ec;
+    if (cyclic_offer_delay_ == std::chrono::milliseconds(0)) {
+       VSOMEIP_ERROR<<"("<<__func__<<":"<<__LINE__<< "cyclic_offer_delay_ is 0)";
+       return;
+    }
+
     main_phase_timer_.expires_from_now(cyclic_offer_delay_);
     if (ec) {
         VSOMEIP_ERROR<< "service_discovery_impl::start_main_phase_timer "
@@ -3078,6 +3136,9 @@ service_discovery_impl::on_main_phase_timer_expired(
         return;
     }
     send(true);
+
+    stop_ttl_timer_offered();
+    start_ttl_timer_offered();
     start_main_phase_timer();
 }
 

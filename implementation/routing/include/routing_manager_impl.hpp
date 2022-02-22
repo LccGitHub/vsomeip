@@ -222,6 +222,7 @@ public:
             bool _has_reliable, bool _has_unreliable);
     void update_routing_info(std::chrono::milliseconds _elapsed);
 
+    void on_offer_service_ttl_expired();
     // Handle remote subscriptions / subscription acks
     void on_remote_subscribe(
             std::shared_ptr<remote_subscription> &_subscription,
